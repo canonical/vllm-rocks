@@ -3,7 +3,7 @@
 
 name: vllm-cpu
 summary: vLLM inference engine (CPU-only)
-description: "vLLM v0.19.0 inference server for CPU platforms (x86_64 and arm64)."
+description: "vLLM v0.19.0 inference server for CPU platform (x86_64)."
 version: "0.19.0"
 license: Apache-2.0
 base: ubuntu@22.04
