@@ -24,8 +24,10 @@ on:
 jobs:
   run-shared-integration:
     uses: canonical/charmed-kubeflow-workflows/.github/workflows/integrate-rock.yaml@main
-    with:
+with:
       rock-dir: ${{ inputs.rock-dir }}
       full-image-tag: ${{ inputs.full-image-tag }}
       event-name: workflow_dispatch
+      target-branch: ${{ inputs.target-branch }}
+      dry-run: ${{ inputs.dry-run }}
     secrets: inherit
