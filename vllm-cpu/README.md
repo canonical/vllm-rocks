@@ -1,7 +1,7 @@
 ## vllm-cpu
 
 Canonical rock for [vLLM](https://github.com/vllm-project/vllm) v0.19.0, CPU-only edition.  
-Supports both `linux/amd64` (x86_64) and `linux/arm64` (aarch64).
+Supports `linux/amd64` (x86_64).
 
 ### Testing
 
