@@ -1,5 +1,5 @@
- # Copyright 2026 Canonical Ltd.
- # See LICENSE file for licensing details.
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
 
 import http.server
 import logging
@@ -85,7 +85,9 @@ def test_rock():
         "/opt/venv/bin/vllm-original",
         "/opt/venv/bin/python",
         "/opt/venv/lib/python3.12/site-packages/vllm",
+        "/opt/venv/lib/python3.12/site-packages/vllm/vllm-rs",
         "/opt/uv",
+        "/opt/binutils/bin/as",
         "/opt/pebble/vllmd.sh",
         "/opt/pebble/log-layer.yaml",
     ]
@@ -207,8 +209,8 @@ def test_vllm_version():
     )
 
     assert (
-        "0.19.0" in result.stdout
-    ), f"Expected vllm version 0.19.0 in output, got: {result.stdout!r}"
+        "0.32.0" in result.stdout
+    ), f"Expected vllm version 0.32.0 in output, got: {result.stdout!r}"
 
 
 @pytest.mark.abort_on_fail
