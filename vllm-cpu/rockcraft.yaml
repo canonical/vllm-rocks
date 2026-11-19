@@ -1,10 +1,10 @@
-# Based on https://github.com/vllm-project/vllm/blob/v0.19.0/docker/Dockerfile.cpu
+# Based on https://github.com/vllm-project/vllm/blob/v0.32.0/docker/Dockerfile.cpu
 # See ../CONTRIBUTING.md for more details about the patterns used in this rock.
 
 name: vllm-cpu
 summary: vLLM inference engine (CPU-only)
-description: "vLLM v0.19.0 inference server for CPU platform (x86_64)."
-version: "0.19.0"
+description: "vLLM v0.32.0 inference server for CPU platform (x86_64)."
+version: "0.32.0"
 license: Apache-2.0
 base: ubuntu@22.04
 platforms:
@@ -14,13 +14,13 @@ run-user: _daemon_
 
 environment:
   VIRTUAL_ENV: "/opt/venv"
-  PATH: "/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  PATH: "/opt/binutils/bin:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  COMPILER_PATH: "/opt/binutils/bin"
   HF_HOME: "/tmp/huggingface"
   HF_HUB_DISABLE_TELEMETRY: "1"
-  CXX: "g++-12"
-  CC: "gcc-12"
-  # LD_PRELOAD: "/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4:/opt/venv/lib/libiomp5.so"
-  # NOTE for arm64:  /usr/lib/aarch64-linux-gnu/libtcmalloc_minimal.so.4
+  CXX: "g++-15"
+  CC: "gcc-15"
+  LD_PRELOAD: "/usr/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4:/opt/venv/lib/libiomp5.so"
 
 services:
   vllm:
@@ -28,7 +28,7 @@ services:
     summary: "vLLM serve (CPU)"
     startup: enabled
     # Pass the model (and any other flags) after the image name, e.g.:
-    #   docker run vllm-cpu:0.19.0 --model facebook/opt-125m
+    #   docker run vllm-cpu:0.32.0 --model facebook/opt-125m
     # /opt/venv/bin/vllm is a wrapper (symlink -> /opt/pebble/vllmd.sh) that
     # optionally enables Pebble log forwarding (when LOKI_URL is set) and then
     # execs the real vllm binary (vllm-original). `serve` is fixed here; the
@@ -37,6 +37,11 @@ services:
     
 
 entrypoint-service: vllm
+
+package-repositories:
+  - type: apt
+    ppa: ubuntu-toolchain-r/test
+    priority: always
 
 parts:
   security-team-requirement:
@@ -63,25 +68,28 @@ parts:
     plugin: nil
     after: [log-forwarding]
     source: https://github.com/vllm-project/vllm.git
-    source-tag: v0.19.0
+    source-tag: v0.32.0
 
     build-packages:
+      - bison
       - build-essential
       - ccache
       - curl
-      - gcc-12
-      - g++-12
+      - flex
+      - gcc-15
+      - g++-15
       - git
       - libnuma-dev
       - make
+      - texinfo
       - xz-utils
 
     overlay-packages:
       # Runtime libraries needed by vLLM / PyTorch
       - ca-certificates
       - ffmpeg
-      - gcc-12
-      - g++-12
+      - gcc-15
+      - g++-15
       - libglib2.0-0
       - libgl1
       - libnuma1
@@ -92,13 +100,29 @@ parts:
     override-build: |
       set -eux
 
-      # Toolchain setup (gcc-12, g++-12, ccache)
-      update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 10 \
-        --slave /usr/bin/g++ g++ /usr/bin/g++-12
-      export CC=/usr/bin/gcc-12
-      export CXX=/usr/bin/g++-12
+      # Match the compiler and assembler used by vLLM's CPU Dockerfile.
+      update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 10 \
+        --slave /usr/bin/g++ g++ /usr/bin/g++-15
+      export CC=/usr/bin/gcc-15
+      export CXX=/usr/bin/g++-15
       export CCACHE_DIR=/root/.cache/ccache
       export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      # vLLM 0.32 enables AMX-FP8, which requires a newer assembler.
+      BINUTILS_VERSION=2.47
+      curl -fsSLO "https://sourceware.org/pub/binutils/releases/binutils-${BINUTILS_VERSION}.tar.xz"
+      tar -xf "binutils-${BINUTILS_VERSION}.tar.xz"
+      mkdir binutils-build
+      (
+        cd binutils-build
+        ../binutils-${BINUTILS_VERSION}/configure \
+          --prefix=/opt/binutils --disable-nls --disable-werror
+        make -j"${MAX_JOBS:-$(nproc)}"
+        make install
+      )
+      rm -rf binutils-build "binutils-${BINUTILS_VERSION}" "binutils-${BINUTILS_VERSION}.tar.xz"
+      export PATH="/opt/binutils/bin:/root/.local/bin:$PATH"
+      export COMPILER_PATH="/opt/binutils/bin"
 
       # uv 
       which uv > /dev/null 2>&1 || (curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -113,41 +137,41 @@ parts:
       uv venv --python 3.12 --seed ${VIRTUAL_ENV}
       export PATH="${VIRTUAL_ENV}/bin:$PATH"
 
-      # pip / uv settings 
+      # Install the CPU runtime dependencies and build dependencies from the
+      # same requirements files used by the upstream CPU image.
       export UV_HTTP_TIMEOUT=500
-      export UV_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu"
       export UV_INDEX_STRATEGY="unsafe-best-match"
       export UV_LINK_MODE="copy"
-      export PIP_EXTRA_INDEX_URL="${UV_EXTRA_INDEX_URL}"
 
-      # Build dependencies (cmake, ninja, torch CPU, etc.)
       uv pip install --no-cache -v \
-        --index-strategy unsafe-best-match \
-        --extra-index-url "${UV_EXTRA_INDEX_URL}" \
-        -r requirements/cpu-build.txt
-      uv cache clean
-
-      # Runtime dependencies
-      uv pip install --no-cache -v \
-        --index-strategy unsafe-best-match \
-        --extra-index-url "${UV_EXTRA_INDEX_URL}" \
+        --index-strategy unsafe-best-match --torch-backend cpu \
         -r requirements/cpu.txt
       uv cache clean
+
+      uv pip install --no-cache -v \
+        --index-strategy unsafe-best-match --torch-backend cpu \
+        -r requirements/build/rust.txt
+      uv cache clean
+
+      uv pip install --no-cache -v \
+        --index-strategy unsafe-best-match --torch-backend cpu \
+        -r requirements/build/cpu.txt
+      uv cache clean
+
+      # Build and package the Rust frontend as in the upstream CPU image.
+      export CARGO_BUILD_JOBS=4
+      bash tools/build_rust.sh
 
       # Build vLLM wheel (CPU)
       export VLLM_TARGET_DEVICE=cpu
       export MAX_JOBS=${MAX_JOBS:-$(nproc)}
+      export CMAKE_ARGS="-DENABLE_AMX_FP8=1"
 
       python setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38
 
       # Install built wheel
-      uv pip install --no-cache dist/vllm-0.19.0*.whl
+      uv pip install --no-cache dist/vllm-0.32.0*.whl
       uv cache clean
-
-      # Pin fastapi to <0.137.0 to avoid incompatibility with prometheus-fastapi-instrumentator 8.0.0.
-      # fastapi>=0.137.0 introduces _IncludedRouter in app.routes, which lacks a .path attribute
-      # and causes the prometheus middleware to crash with AttributeError on every request.
-      uv pip install --no-cache "fastapi[standard]<0.137.0"
 
       # Promote Python interpreter + venv into the prime image
       # The absolute paths must match (/opt/uv/python, /opt/venv) so that all
@@ -155,6 +179,7 @@ parts:
       mkdir -p "${CRAFT_PART_INSTALL}/opt"
       cp -ar /opt/uv  "${CRAFT_PART_INSTALL}/opt/uv"
       cp -ar /opt/venv "${CRAFT_PART_INSTALL}/opt/venv"
+      cp -ar /opt/binutils "${CRAFT_PART_INSTALL}/opt/binutils"
 
       # Mock the vllm executable so `vllm serve ...` (the upstream image
       # entrypoint and KServe manifests) routes through the Pebble service

@@ -1,5 +1,5 @@
- # Copyright 2026 Canonical Ltd.
- # See LICENSE file for licensing details.
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
 
 import http.server
 import logging
@@ -24,6 +24,12 @@ _POLL_INTERVAL_SECONDS = 10
 # Log forwarding surfaces logs during container startup (well before the model
 # finishes loading), so it needs a shorter budget than full server readiness.
 _LOG_FORWARDING_TIMEOUT_SECONDS = 300
+# vLLM allocates shared memory for its engine IPC; Docker's default 64 MiB
+# /dev/shm is too small and makes the engine core crash on startup.
+_SHM_SIZE = "4g"
+# The CPU backend reserves this fraction of host RAM for the model and KV cache;
+# the default (0.92) fails on small machines such as CI runners.
+_GPU_MEMORY_UTILIZATION = "0.3"
 
 
 def _free_port() -> int:
@@ -49,6 +55,8 @@ def vllm_server():
             "docker",
             "run",
             "-d",
+            "--shm-size",
+            _SHM_SIZE,
             "-p",
             f"{port}:{_SERVER_PORT_CONTAINER}",
             "-e",
@@ -56,6 +64,8 @@ def vllm_server():
             local_rock_image,
             "--model",
             _MODEL,
+            "--gpu-memory-utilization",
+            _GPU_MEMORY_UTILIZATION,
         ],
         check=True,
         capture_output=True,
@@ -65,7 +75,7 @@ def vllm_server():
     logger.info(f"Started container {container_id} for vLLM server")
 
     try:
-        yield f"http://localhost:{port}"
+        yield f"http://localhost:{port}", container_id
     finally:
         subprocess.run(["docker", "stop", container_id], check=False)
         subprocess.run(["docker", "rm", container_id], check=False)
@@ -85,7 +95,9 @@ def test_rock():
         "/opt/venv/bin/vllm-original",
         "/opt/venv/bin/python",
         "/opt/venv/lib/python3.12/site-packages/vllm",
+        "/opt/venv/lib/python3.12/site-packages/vllm/vllm-rs",
         "/opt/uv",
+        "/opt/binutils/bin/as",
         "/opt/pebble/vllmd.sh",
         "/opt/pebble/log-layer.yaml",
     ]
@@ -207,30 +219,50 @@ def test_vllm_version():
     )
 
     assert (
-        "0.19.0" in result.stdout
-    ), f"Expected vllm version 0.19.0 in output, got: {result.stdout!r}"
+        "0.32.0" in result.stdout
+    ), f"Expected vllm version 0.32.0 in output, got: {result.stdout!r}"
 
 
 @pytest.mark.abort_on_fail
-def test_endpoint_completions(vllm_server):
-    """Test that the vLLM server responds correctly to a completions request."""
-    base_url = vllm_server
-    logger.info(f"Testing vLLM server at {base_url}")
-    # Wait for the server to become ready
+def _wait_for_healthy(base_url: str, container_id: str) -> None:
+    """Poll the vLLM /health endpoint until it returns 200 or the timeout expires."""
     deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
     while True:
         try:
             resp = requests.get(f"{base_url}/health", timeout=5)
             if resp.status_code == 200:
-                break
+                return
         except requests.ConnectionError:
             pass
 
         if time.monotonic() >= deadline:
+            container_logs = subprocess.run(
+                ["docker", "logs", container_id],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             raise TimeoutError(
-                f"vLLM server did not become healthy within {_STARTUP_TIMEOUT_SECONDS}s"
+                f"vLLM server did not become healthy within {_STARTUP_TIMEOUT_SECONDS}s.\n"
+                f"--- container logs ---\n{container_logs.stdout}{container_logs.stderr}"
             )
         time.sleep(_POLL_INTERVAL_SECONDS)
+
+
+@pytest.mark.abort_on_fail
+def test_vllm_starts(vllm_server):
+    """Test that the vLLM engine starts and reports healthy."""
+    base_url, container_id = vllm_server
+    _wait_for_healthy(base_url, container_id)
+    logger.info(f"vLLM server at {base_url} started successfully")
+
+
+@pytest.mark.abort_on_fail
+def test_endpoint_completions(vllm_server):
+    """Test that the vLLM server responds correctly to a completions request."""
+    base_url, container_id = vllm_server
+    logger.info(f"Testing vLLM server at {base_url}")
+    _wait_for_healthy(base_url, container_id)
 
     logger.info("vLLM server is healthy, sending completions request")
     # Send a completions request matching the README example
@@ -362,6 +394,8 @@ def test_log_forwarding_to_loki(fake_loki):
             "docker",
             "run",
             "-d",
+            "--shm-size",
+            _SHM_SIZE,
             "--add-host",
             "host.docker.internal:host-gateway",
             "-e",
@@ -371,6 +405,8 @@ def test_log_forwarding_to_loki(fake_loki):
             local_rock_image,
             "--model",
             _MODEL,
+            "--gpu-memory-utilization",
+            _GPU_MEMORY_UTILIZATION,
         ],
         check=True,
         capture_output=True,
@@ -423,6 +459,8 @@ def test_log_forwarding_with_overridden_entrypoint(fake_loki):
             "docker",
             "run",
             "-d",
+            "--shm-size",
+            _SHM_SIZE,
             "--add-host",
             "host.docker.internal:host-gateway",
             "-e",
@@ -436,6 +474,8 @@ def test_log_forwarding_with_overridden_entrypoint(fake_loki):
             "serve",
             "--model",
             _MODEL,
+            "--gpu-memory-utilization",
+            _GPU_MEMORY_UTILIZATION,
         ],
         check=True,
         capture_output=True,
