@@ -15,10 +15,14 @@ Launch the server with a small model (downloads from the HuggingFace Hub on firs
 
 ```bash
 docker run -p 8000:8000 \
+  --shm-size=4g \
   -e HF_HOME=/tmp/huggingface \
   vllm-cpu:0.32.0 \
-  --model facebook/opt-125m
+  --model facebook/opt-125m \
+  --gpu-memory-utilization 0.3
 ```
+
+The `--gpu-memory-utilization` flag is the fraction of host RAM the CPU backend reserves for the model and KV cache. The default (0.92) fails on machines with little free memory, such as CI runners.
 
 Test with the OpenAI-compatible completions endpoint:
 
@@ -38,10 +42,12 @@ endpoint and the container adds a Pebble `log-targets` layer at startup. When
 
 ```bash
 docker run -p 8000:8000 \
+  --shm-size=4g \
   -e HF_HOME=/tmp/huggingface \
   -e LOKI_URL=http://my-loki:3100/loki/api/v1/push \
   vllm-cpu:0.32.0 \
-  --model facebook/opt-125m
+  --model facebook/opt-125m \
+  --gpu-memory-utilization 0.3
 ```
 
 Forwarded logs carry Pebble's default `pebble_service` label plus `app=vllm`,
