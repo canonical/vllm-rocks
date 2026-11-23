@@ -179,7 +179,7 @@ def test_log_forwarding_bootstraps_pebble_without_daemon():
 
 @pytest.mark.abort_on_fail
 def test_vllm_entrypoint():
-    """Test that the vllm binary works."""
+    """Verify the CLI reports the expected missing-GPU error in CPU-only CI."""
     check_rock = CheckRock("rockcraft.yaml")
     rock_image = check_rock.get_name()
     rock_version = check_rock.get_version()
@@ -199,8 +199,9 @@ def test_vllm_entrypoint():
         text=True,
     )
 
-    out = "Triton is installed but 0 active driver(s)"
-
     assert (
-        out in result.stdout
-    ), f"Expected error message in output, got: {result.stdout!r}"
+        result.returncode != 0
+    ), "Expected the vLLM CLI to fail in the GPU-less sanity-test environment"
+    assert (
+        "Failed to infer device type" in result.stderr
+    ), f"Expected the missing-GPU diagnostic in stderr, got: {result.stderr!r}"
