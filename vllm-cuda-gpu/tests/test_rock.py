@@ -27,7 +27,8 @@ def test_rock():
         "/opt/venv/bin/python",
         "/opt/venv/lib/python3.12/site-packages/vllm",
         "/opt/uv",
-        "/usr/local/cuda-12.9",
+        "/usr/local/cuda-13.0/bin/nvcc",
+        "/opt/venv/lib/python3.12/site-packages/vllm/vllm-rs",
         "/opt/pebble/vllmd.sh",
         "/opt/pebble/log-layer.yaml",
     ]

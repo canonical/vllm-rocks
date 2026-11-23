@@ -1,8 +1,9 @@
 ## vllm-cuda-gpu
 
-Canonical rock for [vLLM](https://github.com/vllm-project/vllm) v0.19.0, GPU/CUDA edition.
+Canonical rock for [vLLM](https://github.com/vllm-project/vllm) v0.32.0, GPU/CUDA edition.
 It packages the prebuilt vLLM CUDA wheel as an OpenAI-compatible inference server and
-targets NVIDIA GPUs on `linux/amd64` (x86_64).
+targets NVIDIA GPUs on `linux/amd64` (x86_64) with CUDA 13.0 on Ubuntu 24.04.
+The host NVIDIA driver must be compatible with CUDA 13.
 
 For a CPU-only build, see [`../vllm-cpu`](../vllm-cpu).
 
@@ -22,7 +23,7 @@ Launch the server with a small model (downloads from the HuggingFace Hub on firs
 ```bash
 docker run --gpus all -p 8000:8000 \
   -e HF_HOME=/tmp/huggingface \
-  vllm-cuda-gpu:0.19.0 \
+  vllm-cuda-gpu:0.32.0 \
   --model facebook/opt-125m
 ```
 
@@ -46,19 +47,18 @@ endpoint and the container adds a Pebble `log-targets` layer at startup. When
 docker run --gpus all -p 8000:8000 \
   -e HF_HOME=/tmp/huggingface \
   -e LOKI_URL=http://my-loki:3100/loki/api/v1/push \
-  vllm-cuda-gpu:0.19.0 \
+  vllm-cuda-gpu:0.32.0 \
   --model facebook/opt-125m
 ```
 
 Forwarded logs carry Pebble's default `pebble_service` label plus `app=vllm`,
-`edition=gpu`, `version=0.19.0`, and `pod=$HOSTNAME`.
+`edition=gpu`, `version=0.32.0`, and `pod=$HOSTNAME`.
 
 ### Building
 
-> **Note:** Building this rock downloads multi-gigabyte CUDA wheels (PyTorch,
-> NVIDIA runtime libraries, FlashInfer). The build itself runs on CPU and does not
-> require a GPU; only running the server does.
-> This takes approximately 30–60 minutes depending on the machine.
+> **Note:** Building this rock downloads CUDA runtime wheels and precompiled
+> FlashInfer kernels. The build itself runs on CPU and does not require a GPU;
+> only running the server does.
 
 ```bash
 tox -e pack
