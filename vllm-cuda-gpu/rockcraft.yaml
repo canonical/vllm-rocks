@@ -178,7 +178,7 @@ parts:
       uv cache clean
 
       # Install the version-matched precompiled FlashInfer kernels.
-      PIP_CACHE_DIR=/opt/pip/cache vllm download-kernels
+      PIP_CACHE_DIR=/opt/pip/cache flashinfer download-kernels
 
       # vllm-openai server extras (match the official published image)
       uv pip install --no-cache -v \
