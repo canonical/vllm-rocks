@@ -154,8 +154,9 @@ parts:
       export PATH="/root/.local/bin:$PATH"
 
       export UV_PYTHON_INSTALL_DIR=/opt/uv/python
+      mkdir -p "${UV_PYTHON_INSTALL_DIR}"
       export VIRTUAL_ENV=/opt/venv
-      uv venv --python 3.12 --seed ${VIRTUAL_ENV}
+      uv venv --managed-python --python 3.12 --seed ${VIRTUAL_ENV}
       export PATH="${VIRTUAL_ENV}/bin:$PATH"
 
       # pip / uv settings 
